@@ -66,11 +66,3 @@ sysinfo.txt
 
 *.opendb
 *.VC.db
-
-# =========================
-
-# Tobii integration binaries (optional)
-
-# =========================
-
-tobii_gameintegration*.dll
