@@ -20,6 +20,7 @@ UserSettings/
 
 .vscode/
 .vs/
+*.vsconfig
 *.csproj
 *.unityproj
 *.sln
