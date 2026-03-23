@@ -5,7 +5,7 @@
 using UnityEngine;
 using UnityEngine.Events;
 
-[RequireComponent(typeof(Collider))]
+[RequireComponent(typeof(Collider2D))]
 public class GazeInteractable : MonoBehaviour
 {
     // ========================================================================

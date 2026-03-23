@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 
+[RequireComponent(typeof(BoxCollider2D))]
 public class GazeDamageable : GazeInteractable
 {
     [SerializeField] private int maxHealth = 5;
@@ -11,6 +12,16 @@ public class GazeDamageable : GazeInteractable
     private int currentHealth;
     private float timer;
     private bool isGazing;
+
+    private void Awake()
+    {
+        // Sicherstellen, dass Collider existiert
+        BoxCollider2D col = GetComponent<BoxCollider2D>();
+        if (col == null)
+        {
+            Debug.LogError("BoxCollider2D fehlt auf " + gameObject.name);
+        }
+    }
 
     private void Start()
     {
@@ -37,17 +48,21 @@ public class GazeDamageable : GazeInteractable
     protected override void OnGazeEnterCallback()
     {
         isGazing = true;
+        Debug.Log("Gaze ENTER: " + gameObject.name);
     }
 
     protected override void OnGazeExitCallback()
     {
         isGazing = false;
         timer = 0f;
+        Debug.Log("Gaze EXIT: " + gameObject.name);
     }
 
     private void TakeDamage(int damage)
     {
         currentHealth -= damage;
+
+        Debug.Log("DAMAGE → " + currentHealth);
 
         if (currentHealth <= 0)
         {

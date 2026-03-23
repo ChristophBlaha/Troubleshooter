@@ -1,7 +1,3 @@
-// ============================================================================
-// TobiiManager.cs 
-// ============================================================================
-
 using System;
 using System.Runtime.InteropServices;
 using UnityEngine;
@@ -34,7 +30,6 @@ public class TobiiManager : MonoBehaviour
     public bool IsApiReady { get; private set; }
     public bool HasValidGazeData { get; private set; }
     public GameObject GazedObject { get; private set; }
-    public RaycastHit LastGazeHit { get; private set; }
 
     // ========================================================================
     // KONFIGURATION
@@ -49,13 +44,11 @@ public class TobiiManager : MonoBehaviour
     [Range(0f, 0.95f)]
     [SerializeField] private float gazeSmoothing = 0.3f;
 
-    [SerializeField] private float maxRaycastDistance = 100f;
-
     // ========================================================================
     // PRIVATE FELDER
     // ========================================================================
 
-    private static bool isDllLoaded = false;  // static! überlebt Play/Stop
+    private static bool isDllLoaded = false;
     private float retryTimer = 0f;
     private float timeSinceLastGaze = 999f;
     private Vector2 smoothedGazeViewport;
@@ -74,11 +67,10 @@ public class TobiiManager : MonoBehaviour
 
     private static void OnPlayModeStateChanged(PlayModeStateChange state)
     {
-        // Wird aufgerufen BEVOR Play-Mode endet
         if (state == PlayModeStateChange.ExitingPlayMode)
         {
             DoShutdown();
-            Debug.Log("[Tobii] Shutdown via Editor-Callback (ExitingPlayMode)");
+            Debug.Log("[Tobii] Shutdown via Editor-Callback");
         }
     }
 #endif
@@ -101,28 +93,18 @@ public class TobiiManager : MonoBehaviour
         {
             TobiiGameIntegrationApi.PrelinkAll();
 
-            // Sicherheitshalber alten Zustand bereinigen
             try { TobiiGameIntegrationApi.Shutdown(); }
             catch (Exception) { }
 
-            // Kurz warten ist nicht möglich, aber ein paar Frames
-            // Update vor SetApplicationName kann helfen
             TobiiGameIntegrationApi.SetApplicationName(gameName);
             isDllLoaded = true;
 
-            Debug.Log($"[Tobii] DLL geladen: {TobiiGameIntegrationApi.LoadedDll}");
-            Debug.Log($"[Tobii] App Name: '{gameName}'");
-
+            Debug.Log("[Tobii] DLL geladen");
             IsApiReady = TobiiGameIntegrationApi.IsApiInitialized();
-            Debug.Log($"[Tobii] API bereit: {IsApiReady}");
-        }
-        catch (DllNotFoundException e)
-        {
-            Debug.LogError("[Tobii] DLL nicht gefunden!\n" + e.Message);
         }
         catch (Exception e)
         {
-            Debug.LogError("[Tobii] Ladefehler: " + e.Message);
+            Debug.LogError("[Tobii] Fehler: " + e.Message);
         }
     }
 
@@ -134,18 +116,14 @@ public class TobiiManager : MonoBehaviour
     {
         if (!isDllLoaded) return;
 
-        // 1) TGI updaten
         TobiiGameIntegrationApi.Update();
 
-        // 2) API prüfen
         IsApiReady = TobiiGameIntegrationApi.IsApiInitialized();
         if (!IsApiReady) return;
 
-        // 3) Verbindungsstatus
         IsTrackerConnected = TobiiGameIntegrationApi.IsTrackerConnected();
         IsUserPresent = TobiiGameIntegrationApi.IsPresent();
 
-        // 4) Wenn nicht verbunden: TrackWindow alle 2 Sekunden
         if (!IsTrackerConnected)
         {
             retryTimer += Time.deltaTime;
@@ -156,23 +134,15 @@ public class TobiiManager : MonoBehaviour
                 TobiiGameIntegrationApi.TrackWindow(hwnd);
             }
         }
-        else if (!everConnected)
-        {
-            everConnected = true;
-            Debug.Log("[Tobii] Tracker verbunden!");
 
-            var info = TobiiGameIntegrationApi.GetTrackerInfo();
-            if (info != null)
-                Debug.Log($"[Tobii] Gerät: {info.FriendlyName} ({info.ModelName})");
-        }
-
-        // 5) Gaze-Daten lesen
+        // Gaze Daten
         TobiiGazePoint gazePoint;
         bool freshData = TobiiGameIntegrationApi.TryGetLatestGazePoint(out gazePoint);
 
         if (freshData)
         {
             timeSinceLastGaze = 0f;
+
             GazePointNormalized = new Vector2(gazePoint.X, gazePoint.Y);
 
             Vector2 rawViewport = new Vector2(
@@ -194,27 +164,32 @@ public class TobiiManager : MonoBehaviour
 
         HasValidGazeData = (timeSinceLastGaze <= gazeGracePeriod);
 
-        // 6) Zentraler Raycast
+        // ====================================================================
+        // 🔥 2D GAZE RAYCAST
+        // ====================================================================
+
         GazedObject = null;
+
         if (HasValidGazeData && Camera.main != null)
         {
-            Ray gazeRay = Camera.main.ViewportPointToRay(
+            Vector2 worldPos = Camera.main.ViewportToWorldPoint(
                 new Vector3(GazePointViewport.x, GazePointViewport.y, 0f));
 
-            RaycastHit hit;
-            if (Physics.Raycast(gazeRay, out hit, maxRaycastDistance))
+            RaycastHit2D hit = Physics2D.Raycast(worldPos, Vector2.zero);
+
+            if (hit.collider != null)
             {
                 GazedObject = hit.collider.gameObject;
-                LastGazeHit = hit;
             }
         }
 
-        // 7) Head-Tracking
+        // Head Tracking (unverändert)
         TobiiHeadPose headPose;
         if (TobiiGameIntegrationApi.TryGetLatestHeadPose(out headPose))
         {
             HeadPosition = new Vector3(
                 headPose.Position.X, headPose.Position.Y, headPose.Position.Z);
+
             HeadRotation = new Vector3(
                 headPose.Rotation.YawDegrees,
                 headPose.Rotation.PitchDegrees,
@@ -248,32 +223,7 @@ public class TobiiManager : MonoBehaviour
             catch (Exception) { }
 
             isDllLoaded = false;
-            Debug.Log("[Tobii] TGI heruntergefahren.");
+            Debug.Log("[Tobii] Shutdown");
         }
-    }
-
-    // ========================================================================
-    // HILFSMETHODEN
-    // ========================================================================
-
-    public bool GetGazeRay(out Ray gazeRay)
-    {
-        if (HasValidGazeData && Camera.main != null)
-        {
-            gazeRay = Camera.main.ViewportPointToRay(
-                new Vector3(GazePointViewport.x, GazePointViewport.y, 0f));
-            return true;
-        }
-        gazeRay = default;
-        return false;
-    }
-
-    public bool GazeRaycast(out RaycastHit hit, float maxDistance = 100f)
-    {
-        Ray ray;
-        if (GetGazeRay(out ray))
-            return Physics.Raycast(ray, out hit, maxDistance);
-        hit = default;
-        return false;
     }
 }
