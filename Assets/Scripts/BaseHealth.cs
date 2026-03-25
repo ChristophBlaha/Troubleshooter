@@ -5,11 +5,15 @@ public class BaseHealth : MonoBehaviour
 {
     [SerializeField] private int maxHealth = 50;
     [SerializeField] private Slider healthBar;
+    [SerializeField] private GameObject gameOverScreen;
+    
 
     private int currentHealth;
 
     private void Start()
     {
+        if(gameOverScreen != null)
+            gameOverScreen.SetActive(false);
         currentHealth = maxHealth;
         UpdateHealthBar();
     }
@@ -40,5 +44,7 @@ public class BaseHealth : MonoBehaviour
     {
         Debug.Log("Base destroyed!");
         // z. B. Game Over
+        if(gameOverScreen != null)
+            gameOverScreen.SetActive(true);
     }
 }

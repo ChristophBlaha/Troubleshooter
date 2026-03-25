@@ -12,9 +12,9 @@ GameObject:
   - component: {fileID: 4454294282714756754}
   - component: {fileID: 7389804896281217073}
   - component: {fileID: 4722880459321918660}
-  - component: {fileID: 3918907512435744291}
   - component: {fileID: 1374531002615829608}
   - component: {fileID: 3414795261157048187}
+  - component: {fileID: 2069820313585703302}
   m_Layer: 7
   m_Name: enemy1 1
   m_TagString: Enemy
@@ -137,21 +137,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::EnemyMovement
   baseTarget: {fileID: 0}
   speed: 0.5
---- !u!114 &3918907512435744291
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 563831043181390775}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2b4cb9e2625c0a3489c6363d9cf1a5dc, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::EnemyAttack
-  damage: 5
-  hitCooldown: 0.2
-  bounceForce: 0.0001
 --- !u!50 &1374531002615829608
 Rigidbody2D:
   serializedVersion: 5
@@ -225,6 +210,21 @@ BoxCollider2D:
   m_AutoTiling: 0
   m_Size: {x: 2, y: 2}
   m_EdgeRadius: 0
+--- !u!114 &2069820313585703302
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 563831043181390775}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0559ccac3c9c54947a71015baf2740a0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::FriendReturningHome
+  damage: 1
+  hitCooldown: 0.2
+  bounceForce: 5
 --- !u!1 &2536843849091994788
 GameObject:
   m_ObjectHideFlags: 0
