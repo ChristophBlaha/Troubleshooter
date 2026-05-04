@@ -5,10 +5,7 @@ using System.Collections.Generic;
 public class EnemySpawnConfig
 {
     public GameObject enemyPrefab;
-    public float spawnInterval = 2f;
-    public int amountPerSpawn = 1;
 
-    [HideInInspector] public float timer;
 }
 
 public class EnemySpawner : MonoBehaviour
@@ -22,29 +19,69 @@ public class EnemySpawner : MonoBehaviour
     [Header("Enemies")]
     [SerializeField] private List<EnemySpawnConfig> enemies;
 
-    private void Update()
+    private WaveManager waveManager;
+    private int enemiesSpawnedThisWave = 0;
+    private WaveManager.WaveConfig currentWaveConfig;
+    private float spawnTimer = 0f;
+
+    private void Start()
     {
-        foreach (var enemy in enemies)
+        waveManager = WaveManager.Instance;
+        if (waveManager != null)
         {
-            // ❗ Skip wenn Prefab fehlt
-            if (enemy.enemyPrefab == null)
-            {
-                Debug.LogWarning("Enemy Prefab fehlt im Spawner!");
-                continue;
-            }
-
-            enemy.timer += Time.deltaTime;
-
-            if (enemy.timer >= enemy.spawnInterval)
-            {
-                enemy.timer = 0f;
-                SpawnEnemyType(enemy);
-            }
+            waveManager.OnWaveStart.AddListener(OnWaveStart);
         }
     }
 
-    private void SpawnEnemyType(EnemySpawnConfig config)
+    private void OnWaveStart(int waveNumber)
     {
+        currentWaveConfig = waveManager.GetCurrentWaveConfig();
+        enemiesSpawnedThisWave = 0;
+        spawnTimer = 0f;
+        Debug.Log($"[EnemySpawner] Wave {waveNumber} gestartet. Sollen spawnen: {currentWaveConfig.enemyCount} Feinde");
+    }
+
+    private void Update()
+    {
+        if (!waveManager || !waveManager.IsWaveActive() || waveManager.IsWavePaused())
+            return;
+
+        if (enemiesSpawnedThisWave >= currentWaveConfig.enemyCount)
+            return;
+
+        spawnTimer += Time.deltaTime;
+
+        if (spawnTimer < currentWaveConfig.spawnInterval)
+            return;
+
+        spawnTimer = 0f;
+
+        SpawnNextEnemy();
+        enemiesSpawnedThisWave++;
+
+        if (enemiesSpawnedThisWave >= currentWaveConfig.enemyCount)
+        {
+            Debug.Log($"[EnemySpawner] Alle Feinde dieser Wave gespawnt!");
+        }
+    }
+
+    private void SpawnNextEnemy()
+    {
+        if (enemies == null || enemies.Count == 0)
+        {
+            Debug.LogWarning("EnemySpawner: Keine Enemy-Prefabs in der Liste!");
+            return;
+        }
+
+        List<EnemySpawnConfig> validEnemies = enemies.FindAll(e => e != null && e.enemyPrefab != null);
+        if (validEnemies.Count == 0)
+        {
+            Debug.LogWarning("EnemySpawner: Alle Enemy-Prefabs sind NULL!");
+            return;
+        }
+
+        EnemySpawnConfig config = validEnemies[Random.Range(0, validEnemies.Count)];
+
         // Extra Safety
         if (config.enemyPrefab == null)
         {
@@ -52,29 +89,41 @@ public class EnemySpawner : MonoBehaviour
             return;
         }
 
-        for (int i = 0; i < config.amountPerSpawn; i++)
+        // Zufälliger Winkel (360°)
+        float angle = Random.Range(0f, Mathf.PI * 2);
+
+        // 2D Kreis (XY Ebene)
+        Vector3 dir = new Vector3(Mathf.Cos(angle), Mathf.Sin(angle), 0f);
+
+        Vector3 spawnPos = baseTarget.position + dir * spawnRadius;
+
+        // Instantiate
+        GameObject enemy = Instantiate(config.enemyPrefab, spawnPos, Quaternion.identity);
+
+        // Movement setzen + Speed anpassen
+        EnemyMovement movement = enemy.GetComponent<EnemyMovement>();
+        if (movement != null)
         {
-            // Zufälliger Winkel (360°)
-            float angle = Random.Range(0f, Mathf.PI * 2);
+            movement.baseTarget = baseTarget;
+            movement.Speed *= currentWaveConfig.enemySpeedMultiplier;
+        }
+        else
+        {
+            Debug.LogWarning("Enemy hat kein EnemyMovement Script!");
+        }
 
-            // 2D Kreis (XY Ebene)
-            Vector3 dir = new Vector3(Mathf.Cos(angle), Mathf.Sin(angle), 0f);
+        // Health anpassen
+        GazeDamageable damageable = enemy.GetComponent<GazeDamageable>();
+        if (damageable != null)
+        {
+            damageable.MaxHealth = Mathf.RoundToInt(damageable.MaxHealth * currentWaveConfig.enemyHealthMultiplier);
+            damageable.currentHealth = damageable.MaxHealth;
+        }
 
-            Vector3 spawnPos = baseTarget.position + dir * spawnRadius;
-
-            // Instantiate
-            GameObject enemy = Instantiate(config.enemyPrefab, spawnPos, Quaternion.identity);
-
-            // Movement setzen
-            EnemyMovement movement = enemy.GetComponent<EnemyMovement>();
-            if (movement != null)
-            {
-                movement.baseTarget = baseTarget;
-            }
-            else
-            {
-                Debug.LogWarning("Enemy hat kein EnemyMovement Script!");
-            }
+        // Audio beim Spawn
+        if (AudioManager.Instance)
+        {
+            AudioManager.Instance.PlaySFX("enemy_spawn", 0.6f);
         }
     }
 }

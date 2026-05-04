@@ -10,6 +10,12 @@ public class EnemyMovement : MonoBehaviour
     private float bounceTimer = 0f;
     private float bounceDuration = 0.2f;
 
+    public float Speed 
+    { 
+        get { return speed; }
+        set { speed = value; }
+    }
+
     private void Awake()
     {
         rb = GetComponent<Rigidbody2D>();

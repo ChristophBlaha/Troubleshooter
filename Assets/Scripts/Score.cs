@@ -6,9 +6,11 @@ public class Score : MonoBehaviour
 {
     private int score;
     public TextMeshProUGUI scoreText;
+    public TextMeshProUGUI waveText;
     public static Score Instance { get; private set; }
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
     
+    private WaveManager waveManager;
+
     private void Awake()
     {
         if (Instance == null)
@@ -17,19 +19,47 @@ public class Score : MonoBehaviour
             Destroy(gameObject);
     }
 
+    private void Start()
+    {
+        waveManager = WaveManager.Instance;
+        if (waveManager != null)
+        {
+            waveManager.OnWaveStart.AddListener(UpdateWaveDisplay);
+        }
+        UpdateWaveDisplay(1);
+    }
+
     private void Update()
     {
         if(scoreText!=null)
-            scoreText.text = score.ToString();
+            scoreText.text = $"Score: {score}";
     }
 
     public void IncreaseScore(int amount)
     {
         score += amount;
+        if (AudioManager.Instance)
+        {
+            AudioManager.Instance.PlaySFX("score_gained", 0.6f);
+        }
+        Debug.Log($"Score increased: {amount}, Total: {score}");
+    }
+
+    private void UpdateWaveDisplay(int waveNumber)
+    {
+        if (waveText != null)
+        {
+            waveText.text = $"Wave: {waveNumber}";
+        }
     }
     
     public int GetScore()
     {
         return score;
+    }
+
+    public int GetCurrentWave()
+    {
+        return waveManager ? waveManager.GetCurrentWave() : 1;
     }
 }

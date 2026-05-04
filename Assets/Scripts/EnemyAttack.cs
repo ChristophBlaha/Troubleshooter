@@ -31,6 +31,11 @@ public class EnemyAttack : MonoBehaviour
             if (baseHealth != null)
             {
                 baseHealth.TakeDamage(damage);
+                
+                if (AudioManager.Instance)
+                {
+                    AudioManager.Instance.PlaySFX("enemy_attack", 0.7f);
+                }
             }
         }
 

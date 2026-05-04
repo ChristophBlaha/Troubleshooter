@@ -16,7 +16,7 @@ GameObject:
   - component: {fileID: 3414795261157048187}
   - component: {fileID: 2069820313585703302}
   m_Layer: 7
-  m_Name: enemy1 1
+  m_Name: friendly1
   m_TagString: Enemy
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -123,6 +123,9 @@ MonoBehaviour:
   damagePerTick: 1
   damageInterval: 0.2
   healthBar: {fileID: 8805329743595566564}
+  OnDeath:
+    m_PersistentCalls:
+      m_Calls: []
 --- !u!114 &4722880459321918660
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -222,9 +225,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0559ccac3c9c54947a71015baf2740a0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FriendReturningHome
-  damage: 1
-  hitCooldown: 0.2
-  bounceForce: 5
+  alliedDefenderPrefab: {fileID: 4770698453908906080, guid: 63778b68f1435fe468e69fd8a70ba7a5, type: 3}
+  spawnOffsetDistance: 2
 --- !u!1 &2536843849091994788
 GameObject:
   m_ObjectHideFlags: 0

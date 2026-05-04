@@ -1,7 +1,12 @@
 using System;
 using System.Runtime.InteropServices;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using Tobii.GameIntegration.Net;
+
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -44,6 +49,9 @@ public class TobiiManager : MonoBehaviour
     [Range(0f, 0.95f)]
     [SerializeField] private float gazeSmoothing = 0.3f;
 
+    [Header("Fallback Input")]
+    [Tooltip("Wenn aktiviert, wird die Mausposition als Gaze-Eingabe verwendet, falls Tobii nicht verfügbar oder zusätzlich.")]
+    [SerializeField] private bool enableMouseAsGaze = false;
     // ========================================================================
     // PRIVATE FELDER
     // ========================================================================
@@ -53,6 +61,8 @@ public class TobiiManager : MonoBehaviour
     private float timeSinceLastGaze = 999f;
     private Vector2 smoothedGazeViewport;
     private bool everConnected = false;
+    private const string PREF_MOUSE_AS_GAZE = "UseMouseAsGaze";
+    private Camera cachedCamera;
 
     // ========================================================================
     // EDITOR CALLBACK
@@ -106,6 +116,34 @@ public class TobiiManager : MonoBehaviour
         {
             Debug.LogError("[Tobii] Fehler: " + e.Message);
         }
+        // Load preference for mouse fallback
+        enableMouseAsGaze = PlayerPrefs.GetInt(PREF_MOUSE_AS_GAZE, enableMouseAsGaze ? 1 : 0) == 1;
+
+        ResolveCamera(true);
+        RebindTrackingWindow("Awake");
+    }
+
+    private void Start()
+    {
+        RebindTrackingWindow("Start");
+    }
+
+    private void OnEnable()
+    {
+        SceneManager.sceneLoaded += OnSceneLoaded;
+    }
+
+    private void OnApplicationFocus(bool hasFocus)
+    {
+        if (hasFocus)
+        {
+            RebindTrackingWindow("Focus");
+        }
+    }
+
+    private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        RebindTrackingWindow($"SceneLoaded:{scene.name}");
     }
 
     // ========================================================================
@@ -130,8 +168,7 @@ public class TobiiManager : MonoBehaviour
             if (retryTimer >= 2f)
             {
                 retryTimer = 0f;
-                IntPtr hwnd = GetActiveWindow();
-                TobiiGameIntegrationApi.TrackWindow(hwnd);
+                RebindTrackingWindow("Retry");
             }
         }
 
@@ -164,15 +201,47 @@ public class TobiiManager : MonoBehaviour
 
         HasValidGazeData = (timeSinceLastGaze <= gazeGracePeriod);
 
+        // Wenn Mouse-as-Gaze aktiv ist, hat die Maus Vorrang vor Tobii-Daten.
+        // Das ist kein reiner Fallback, sondern ein echter Eingabemodus.
+        Camera cameraToUse = ResolveCamera(false);
+
+        if (enableMouseAsGaze && cameraToUse != null)
+        {
+            if (!TryGetMouseScreenPosition(out Vector2 mouseScreenPos))
+            {
+                return;
+            }
+
+            Vector3 mousePos = mouseScreenPos;
+            Vector2 mouseViewport = cameraToUse.ScreenToViewportPoint(mousePos);
+
+            // Clamp to 0..1
+            mouseViewport.x = Mathf.Clamp01(mouseViewport.x);
+            mouseViewport.y = Mathf.Clamp01(mouseViewport.y);
+
+            // Convert to Tobii normalized (-1..1) for compatibility
+            GazePointNormalized = new Vector2(mouseViewport.x * 2f - 1f, mouseViewport.y * 2f - 1f);
+
+            if (gazeSmoothing > 0f)
+                smoothedGazeViewport = Vector2.Lerp(mouseViewport, smoothedGazeViewport, gazeSmoothing);
+            else
+                smoothedGazeViewport = mouseViewport;
+
+            GazePointViewport = smoothedGazeViewport;
+            HasValidGazeData = true;
+        }
+
         // ====================================================================
         // 🔥 2D GAZE RAYCAST
         // ====================================================================
 
         GazedObject = null;
 
-        if (HasValidGazeData && Camera.main != null)
+        cameraToUse = ResolveCamera(false);
+
+        if (HasValidGazeData && cameraToUse != null)
         {
-            Vector2 worldPos = Camera.main.ViewportToWorldPoint(
+            Vector2 worldPos = cameraToUse.ViewportToWorldPoint(
                 new Vector3(GazePointViewport.x, GazePointViewport.y, 0f));
 
             RaycastHit2D hit = Physics2D.Raycast(worldPos, Vector2.zero);
@@ -197,13 +266,28 @@ public class TobiiManager : MonoBehaviour
         }
     }
 
+    // Public API to toggle mouse fallback at runtime
+    public void SetUseMouseAsGaze(bool enabled)
+    {
+        enableMouseAsGaze = enabled;
+        PlayerPrefs.SetInt(PREF_MOUSE_AS_GAZE, enabled ? 1 : 0);
+        PlayerPrefs.Save();
+    }
+
+    public bool IsMouseAsGazeEnabled() => enableMouseAsGaze;
+
     // ========================================================================
     // SHUTDOWN
     // ========================================================================
 
     private void OnDisable()
     {
-        DoShutdown();
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+
+        if (Instance == this)
+        {
+            DoShutdown();
+        }
     }
 
     private void OnApplicationQuit()
@@ -225,5 +309,60 @@ public class TobiiManager : MonoBehaviour
             isDllLoaded = false;
             Debug.Log("[Tobii] Shutdown");
         }
+    }
+
+    private void RebindTrackingWindow(string reason)
+    {
+        if (!isDllLoaded)
+            return;
+
+        try
+        {
+            IntPtr hwnd = GetActiveWindow();
+            if (hwnd != IntPtr.Zero)
+            {
+                TobiiGameIntegrationApi.TrackWindow(hwnd);
+                retryTimer = 0f;
+                Debug.Log($"[Tobii] TrackWindow ({reason})");
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[Tobii] TrackWindow fehlgeschlagen ({reason}): {e.Message}");
+        }
+    }
+
+    private Camera ResolveCamera(bool refresh)
+    {
+        if (!refresh && cachedCamera != null)
+            return cachedCamera;
+
+        cachedCamera = Camera.main;
+
+        if (cachedCamera == null)
+        {
+            cachedCamera = FindFirstObjectByType<Camera>();
+        }
+
+        return cachedCamera;
+    }
+
+    private bool TryGetMouseScreenPosition(out Vector2 screenPosition)
+    {
+#if ENABLE_INPUT_SYSTEM
+        if (Mouse.current != null)
+        {
+            screenPosition = Mouse.current.position.ReadValue();
+            return true;
+        }
+#endif
+
+#if ENABLE_LEGACY_INPUT_MANAGER
+        screenPosition = Input.mousePosition;
+        return true;
+#else
+        screenPosition = default;
+        return false;
+#endif
     }
 }

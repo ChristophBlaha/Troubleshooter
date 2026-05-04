@@ -1,0 +1,69 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &8874135327448912014
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 8551318960794311020}
+  - component: {fileID: 8812404111329861438}
+  m_Layer: 0
+  m_Name: AudioManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &8551318960794311020
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8874135327448912014}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 823.5945, y: 437.33716, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &8812404111329861438
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8874135327448912014}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b92a65ba127d840499ed1fd5bcb70560, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AudioManager
+  soundEffects:
+  - id: enemy_spawn
+    clip: {fileID: 0}
+  - id: gaze_hit
+    clip: {fileID: 8300000, guid: dc0c063a46660a948b84819e4ecafcca, type: 3}
+  - id: enemy_death
+    clip: {fileID: 8300000, guid: e3d6ead24fcbf734181eda8b2766fdd5, type: 3}
+  - id: enemy_attack
+    clip: {fileID: 0}
+  - id: score_gained
+    clip: {fileID: 8300000, guid: 6ab50e887fbc5214c9c7023cc99a28d2, type: 3}
+  - id: base_destroyed
+    clip: {fileID: 0}
+  - id: ally_arrived
+    clip: {fileID: 8300000, guid: b6e72b7648ed7c3458b49af3e7e3fc5d, type: 3}
+  - id: allied_shoot
+    clip: {fileID: 8300000, guid: 987d1ce642d21e64eb8e0116738afd01, type: 3}
+  - id: projectile_hit
+    clip: {fileID: 0}
+  backgroundMusic: {fileID: 8300000, guid: 79c54f83815ae7443b0da7670045d08d, type: 3}
+  masterVolume: 1
+  sfxVolume: 0.8
+  musicVolume: 0.5

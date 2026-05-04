@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.Events;
 
 [RequireComponent(typeof(BoxCollider2D))]
 public class GazeDamageable : GazeInteractable
@@ -9,9 +10,16 @@ public class GazeDamageable : GazeInteractable
     [SerializeField] private float damageInterval = 0.2f;
     [SerializeField] private Slider healthBar;
 
-    private int currentHealth;
+    public int currentHealth { get; set; }
+    public int MaxHealth 
+    { 
+        get { return maxHealth; }
+        set { maxHealth = value; }
+    }
+
     private float timer;
     private bool isGazing;
+    public UnityEvent OnDeath = new UnityEvent();
 
     private void Awake()
     {
@@ -48,6 +56,10 @@ public class GazeDamageable : GazeInteractable
     protected override void OnGazeEnterCallback()
     {
         isGazing = true;
+        if (AudioManager.Instance)
+        {
+            AudioManager.Instance.PlaySFX("gaze_hit", 0.7f);
+        }
         Debug.Log("Gaze ENTER: " + gameObject.name);
     }
 
@@ -73,6 +85,11 @@ public class GazeDamageable : GazeInteractable
         UpdateHealthBar();
     }
 
+    public void TakeDamageExternal(int damage)
+    {
+        TakeDamage(damage);
+    }
+
     private void UpdateHealthBar()
     {
         if (healthBar != null)
@@ -81,6 +98,18 @@ public class GazeDamageable : GazeInteractable
 
     private void Die()
     {
+        if (AudioManager.Instance)
+        {
+            AudioManager.Instance.PlaySFX("enemy_death", 0.8f);
+        }
+        OnDeath?.Invoke();
+
+        // Notify WaveController
+        if (WaveController.Instance != null)
+        {
+            WaveController.Instance.RegisterEnemyDeath();
+        }
+
         Destroy(gameObject);
     }
 }
