@@ -2443,7 +2443,7 @@ MonoBehaviour:
   baseTarget: {fileID: 1694551069}
   spawnRadius: 10
   enemies:
-  - enemyPrefab: {fileID: 1380629578}
+  - enemyPrefab: {fileID: 563831043181390775, guid: c5d76413c44949d41b50e3ba26e3c68a, type: 3}
   - enemyPrefab: {fileID: 563831043181390775, guid: c1fd4da4344dd504cbdad965b36031d8, type: 3}
   - enemyPrefab: {fileID: 563831043181390775, guid: 8d7d706c32b7de94a8fa3125298bab20, type: 3}
 --- !u!4 &641395128

@@ -36,10 +36,10 @@ public class WaveController : MonoBehaviour
     private void OnWaveStarted(int waveNumber)
     {
         isWaveActive = true;
-        currentWaveEnemyCount = waveManager.GetCurrentWaveConfig().enemyCount;
+        currentWaveEnemyCount = waveManager.GetCurrentWaveConfig().totalSpawnCount;
         currentWaveEnemiesKilled = 0;
 
-        Debug.Log($"[WaveController] Wave {waveNumber} started. Enemies to spawn: {currentWaveEnemyCount}");
+        Debug.Log($"[WaveController] Wave {waveNumber} started. Units to resolve: {currentWaveEnemyCount}");
     }
 
     public void RegisterEnemyDeath()

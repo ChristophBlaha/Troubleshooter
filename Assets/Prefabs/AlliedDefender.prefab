@@ -48,9 +48,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AlliedDefender
   shootRange: 800
-  shootCooldown: 1.54
-  damagePerShot: 10
-  projectileSpeed: 2
+  shootCooldown: 1.35
+  damagePerShot: 3
+  projectileSpeed: 6.2
   projectilePrefab: {fileID: 5785858458513535923, guid: 52ca79204b725d94e9d800f6f7cff217, type: 3}
   defaultVisualRotation: {x: 0, y: 0, z: -90}
 --- !u!212 &325000391350800032

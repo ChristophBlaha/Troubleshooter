@@ -12,15 +12,17 @@ public class WaveManager : MonoBehaviour
     public class WaveConfig
     {
         public int waveNumber;
-        public int enemyCount;
+        public int hostileCount;
+        public int friendlyCount;
         public float spawnInterval;
         public float enemyHealthMultiplier;
         public float enemySpeedMultiplier;
+        public int totalSpawnCount => hostileCount + friendlyCount;
     }
 
-    [SerializeField] private float baseEnemyCount = 3f;
-    [SerializeField] private float baseSpawnInterval = 2f;
-    [SerializeField] private float baseDifficultyMultiplier = 1.3f;
+    [SerializeField] private int baseHostileCount = 4;
+    [SerializeField] private float hostileGrowthPerWave = 1.25f;
+    [SerializeField] private float baseSpawnInterval = 1.9f;
     [SerializeField] private float wavePauseDuration = 3f;
 
     private int currentWave = 0;
@@ -85,16 +87,24 @@ public class WaveManager : MonoBehaviour
 
     private WaveConfig GenerateWaveConfig(int waveNumber)
     {
-        // Schwierigkeitsmultiplikator: 1.0 → 1.3 → 1.69 → ...
-        float difficultyMult = Mathf.Pow(baseDifficultyMultiplier, waveNumber - 1);
+        int baseHostileWaveCount = baseHostileCount + Mathf.CeilToInt((waveNumber - 1) * hostileGrowthPerWave);
+        baseHostileWaveCount += Mathf.FloorToInt((waveNumber - 1) / 3f);
+
+        int friendlyCount = waveNumber <= 1 ? 1 : 1 + Mathf.FloorToInt((waveNumber - 1) / 2f);
+        friendlyCount = Mathf.Min(friendlyCount, Mathf.Max(1, baseHostileWaveCount / 3));
+
+        int hostileCount = baseHostileWaveCount * 2;
+
+        float spawnAcceleration = 1f + (waveNumber - 1) * 0.12f;
 
         return new WaveConfig
         {
             waveNumber = waveNumber,
-            enemyCount = Mathf.Max(1, Mathf.RoundToInt(baseEnemyCount * difficultyMult)),
-            spawnInterval = Mathf.Max(0.5f, baseSpawnInterval / difficultyMult),
-            enemyHealthMultiplier = 1f + (waveNumber - 1) * 0.15f,
-            enemySpeedMultiplier = 1f + (waveNumber - 1) * 0.1f
+            hostileCount = Mathf.Max(3, hostileCount),
+            friendlyCount = Mathf.Max(1, friendlyCount),
+            spawnInterval = Mathf.Max(0.55f, baseSpawnInterval / spawnAcceleration),
+            enemyHealthMultiplier = 1f + (waveNumber - 1) * 0.18f,
+            enemySpeedMultiplier = 1f + (waveNumber - 1) * 0.12f
         };
     }
 

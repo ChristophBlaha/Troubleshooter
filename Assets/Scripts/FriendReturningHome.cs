@@ -27,8 +27,8 @@ public class FriendReturningHome : MonoBehaviour
         if (!collision.gameObject.CompareTag("Base"))
             return;
 
-        // Score
-        Score.Instance.IncreaseScore(10);
+        if (Score.Instance != null)
+            Score.Instance.AddFriendlyReachedBaseScore();
 
         // Audio
         if (AudioManager.Instance)

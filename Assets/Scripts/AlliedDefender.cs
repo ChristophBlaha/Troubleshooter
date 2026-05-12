@@ -1,39 +1,51 @@
 using UnityEngine;
 
 /// <summary>
-/// Verbündete Einheit, die die Base verteidigt
-/// Spawnt neben der Base und schießt auf Gegner, die der Base am nächsten sind
-/// Bewegt sich zum Gegner hin und schaut in Schussrichtung
+/// Verbündete Einheit, die die Base verteidigt.
+/// Sie bewaffnet sich an der Base, verteidigt die Umgebung und kehrt nach Wave-Ende zurück.
 /// </summary>
 public class AlliedDefender : MonoBehaviour
 {
-    [SerializeField] private float shootCooldown = 1.5f;
+    [SerializeField] private float shootCooldown = 1.35f;
     [SerializeField] private int damagePerShot = 2;
-    [SerializeField] private float projectileSpeed = 10f;
+    [SerializeField] private float projectileSpeed = 6.2f;
     [SerializeField] private GameObject projectilePrefab;
     [SerializeField] private Vector3 defaultVisualRotation = new Vector3(0f, 0f, -90f);
-    [SerializeField] private float moveSpeed = 2.5f;  // Reduziert für sanftere Bewegung
-    [SerializeField] private float preferredDistance = 5f;  // Abstand zum Gegner halten
-    [SerializeField] private float viewportMargin = 1f;      // Abstand vom Bildschirmrand
-    [SerializeField] private float movementDamping = 0.1f;   // Sanfte Bewegungs-Übergänge
+    [SerializeField] private float moveSpeed = 2.35f;
+    [SerializeField] private float viewportMargin = 1f;
+    [SerializeField] private float movementDamping = 0.12f;
+    [SerializeField] private float aimVarianceDegrees = 8f;
     [SerializeField] private Color rescuedTint = new Color(0.2f, 1f, 0.38f, 1f);
     [SerializeField] private float returnPortalVolume = 0.8f;
     [SerializeField] private float returnPortalPitch = 1.22f;
-    [SerializeField] private float launchImpulse = 1.25f;
+    [SerializeField] private float launchImpulse = 1.3f;
     [SerializeField] private float absorbStartDistance = 0.7f;
+    [SerializeField] private float waveEndAbsorbStartDistance = 1.35f;
     [SerializeField] private float absorbDuration = 0.35f;
     [SerializeField] private float armingDuration = 0.35f;
     [SerializeField] private float undockDuration = 0.45f;
     [SerializeField] private int dockedSortingOrder = 18;
     [SerializeField] private int absorbSortingOrder = 20;
+    [SerializeField] private int maxHealth = 6;
+    [SerializeField] private float idleGuardRadius = 2.45f;
+    [SerializeField] private float idleGuardTolerance = 0.4f;
+    [SerializeField] private float maxChaseDistanceFromBase = 5.4f;
+    [SerializeField] private float hardLeashDistanceFromBase = 6.15f;
+    [SerializeField] private Vector2 combatColliderSize = new Vector2(1.6f, 1.6f);
+    [SerializeField] private float allySeparationRadius = 1.3f;
+    [SerializeField] private float allySeparationStrength = 1.45f;
+    [SerializeField] private float targetLaneOffset = 0.95f;
+    [SerializeField] private float formationRadius = 2.35f;
+    [SerializeField] private float formationRadiusVariance = 0.45f;
+    [SerializeField] private float laneWaveAmplitude = 0.45f;
+    [SerializeField] private float laneWaveSpeed = 0.9f;
 
     private Transform baseTarget;
-    private float shootTimer = 0f;
+    private float shootTimer;
     private Rigidbody2D rb;
     private Camera mainCamera;
-    private Vector2 targetVelocity = Vector2.zero;  // Für sanfte Bewegungs-Übergänge
-    private float formationOffset = 0f;  // Position im Kreis um Gegner
-    private bool hasLeftBase = false;  // Flag: ist der Defender bereits aus der Base heraus?
+    private float formationOffset;
+    private bool hasLeftBase;
     private SpriteRenderer spriteRenderer;
     private bool isAbsorbingIntoBase;
     private float absorbTimer;
@@ -47,14 +59,29 @@ public class AlliedDefender : MonoBehaviour
     private Vector2 launchDirection;
     private int originalSortingOrder;
     private bool isUndockingFromBase;
+    private bool returnAfterWaveEnd;
+    private GazeDamageable friendlyDamageable;
+    private BoxCollider2D boxCollider;
+    private WaveManager waveManager;
+    private float guardRadiusOffset;
+    private float personalLaneOffset;
+    private float personalFormationRadius;
+    private float movementSeed;
 
     private void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
         spriteRenderer = GetComponentInChildren<SpriteRenderer>();
+        boxCollider = GetComponent<BoxCollider2D>();
         cachedColliders = GetComponentsInChildren<Collider2D>(true);
+
         if (spriteRenderer != null)
             originalSortingOrder = spriteRenderer.sortingOrder;
+
+        InitializeMovementIdentity();
+
+        EnsureFriendlyDamageable();
+        EnsureCombatCollider();
     }
 
     private void Start()
@@ -62,26 +89,24 @@ public class AlliedDefender : MonoBehaviour
         baseTarget = GameObject.FindGameObjectWithTag("Base")?.transform;
         transform.rotation = Quaternion.Euler(defaultVisualRotation);
         mainCamera = Camera.main;
+        waveManager = WaveManager.Instance;
         ApplyRescueTint();
 
-        // Alle Defenders bekommen unterschiedliche Formation-Position
-        AlliedDefender[] allDefenders = FindObjectsOfType<AlliedDefender>();
-        for (int i = 0; i < allDefenders.Length; i++)
-        {
-            if (allDefenders[i] == this)
-            {
-                formationOffset = i * (360f / allDefenders.Length);
-                break;
-            }
-        }
+        if (waveManager != null)
+            waveManager.OnWaveComplete.AddListener(HandleWaveComplete);
+
+    }
+
+    private void OnDestroy()
+    {
+        if (waveManager != null)
+            waveManager.OnWaveComplete.RemoveListener(HandleWaveComplete);
     }
 
     private void Update()
     {
         if (baseTarget == null)
-        {
             baseTarget = GameObject.FindGameObjectWithTag("Base")?.transform;
-        }
 
         if (isAbsorbingIntoBase)
         {
@@ -95,36 +120,31 @@ public class AlliedDefender : MonoBehaviour
             return;
         }
 
-        // Im Bildschirm bleiben
         ClampToViewport();
 
-        // Wenn Defender die Base verlässt, setze Flag
-        if (!hasLeftBase && baseTarget != null && Vector2.Distance(transform.position, baseTarget.position) > 3f)
-        {
+        if (!hasLeftBase && baseTarget != null && Vector2.Distance(transform.position, baseTarget.position) > 2.8f)
             hasLeftBase = true;
-        }
 
-        // Nur zerstöre wenn er bereits herauskam und zurückkommt
-        if (hasLeftBase && baseTarget != null && Vector2.Distance(transform.position, baseTarget.position) < absorbStartDistance)
+        shootTimer += Time.deltaTime;
+
+        bool forcedReturnToBase = returnAfterWaveEnd && hasLeftBase;
+        GazeDamageable targetEnemy = forcedReturnToBase ? null : FindClosestEnemyToBase();
+        bool shouldReturnToBase = hasLeftBase && (forcedReturnToBase || (targetEnemy == null && IsWaveCooldownActive()));
+
+        float absorbThreshold = forcedReturnToBase ? waveEndAbsorbStartDistance : absorbStartDistance;
+        if (shouldReturnToBase && baseTarget != null && Vector2.Distance(transform.position, baseTarget.position) < absorbThreshold)
         {
             BeginBaseAbsorption();
             return;
         }
 
-        shootTimer += Time.deltaTime;
-
-        // Gegner suchen, der der Base am nächsten ist
-        GazeDamageable targetEnemy = FindClosestEnemyToBase();
-        
-        // Debug: Schießen aktivieren auch wenn Gegner nicht im Bildschirm ist
         if (targetEnemy != null && shootTimer >= shootCooldown)
         {
-            ShootAt(targetEnemy.gameObject.transform);
+            ShootAt(targetEnemy.transform);
             shootTimer = 0f;
         }
 
-        // Bewegung: zum Gegner oder zur Base, aber Abstand halten
-        MoveTowardTarget(targetEnemy);
+        MoveTowardTarget(targetEnemy, shouldReturnToBase);
     }
 
     private GazeDamageable FindClosestEnemyToBase()
@@ -136,16 +156,19 @@ public class AlliedDefender : MonoBehaviour
         GazeDamageable closestToBase = null;
         float closestDist = float.MaxValue;
 
-        foreach (var enemy in allEnemies)
+        for (int i = 0; i < allEnemies.Length; i++)
         {
-            if (enemy == null)
+            GazeDamageable enemy = allEnemies[i];
+            if (enemy == null || enemy == friendlyDamageable || enemy.Team != DamageableTeam.Hostile)
                 continue;
 
-            // Nur echte Gegner schießen: keine FriendReturningHome-Komponente
             if (enemy.GetComponent<FriendReturningHome>() != null)
                 continue;
 
             float distToBase = Vector2.Distance(baseTarget.position, enemy.transform.position);
+            if (distToBase > maxChaseDistanceFromBase)
+                continue;
+
             if (distToBase < closestDist)
             {
                 closestToBase = enemy;
@@ -156,53 +179,67 @@ public class AlliedDefender : MonoBehaviour
         return closestToBase;
     }
 
-    private void MoveTowardTarget(GazeDamageable target)
+    private void MoveTowardTarget(GazeDamageable target, bool shouldReturnToBase)
     {
         Vector2 moveDirection = Vector2.zero;
 
+        if (baseTarget != null)
+        {
+            float distanceToBase = Vector2.Distance(transform.position, baseTarget.position);
+            if (!shouldReturnToBase && distanceToBase > hardLeashDistanceFromBase)
+            {
+                moveDirection = ((Vector2)baseTarget.position - (Vector2)transform.position).normalized;
+                ApplyVelocity(moveDirection);
+                return;
+            }
+        }
+
         if (target != null)
         {
-            // Formation: Positioniere Defenders im Kreis um den Gegner
-            float formationAngle = formationOffset * Mathf.Deg2Rad;
-            float formationRadius = 3.5f;  // Radius um Gegner herum
-            Vector2 formationPosition = (Vector2)target.transform.position + 
-                                       new Vector2(Mathf.Cos(formationAngle), Mathf.Sin(formationAngle)) * formationRadius;
-            
-            Vector2 toFormationPos = (formationPosition - (Vector2)transform.position);
-            float distToFormation = toFormationPos.magnitude;
-            
-            // Bewegungslogik: Zur Formation-Position gehen
-            if (distToFormation > 0.5f)
+            Vector2 toEnemy = ((Vector2)target.transform.position - (Vector2)transform.position).normalized;
+            if (toEnemy.sqrMagnitude < 0.001f)
+                toEnemy = Vector2.up;
+
+            Vector2 baseToEnemy = baseTarget != null
+                ? ((Vector2)target.transform.position - (Vector2)baseTarget.position).normalized
+                : toEnemy;
+            if (baseToEnemy.sqrMagnitude < 0.001f)
+                baseToEnemy = toEnemy;
+
+            Vector2 perpendicular = new Vector2(-baseToEnemy.y, baseToEnemy.x);
+            float laneWaveOffset = Mathf.Sin((Time.time * laneWaveSpeed) + movementSeed) * laneWaveAmplitude;
+            Vector2 formationPosition = (Vector2)target.transform.position
+                - baseToEnemy * personalFormationRadius
+                + perpendicular * (personalLaneOffset + laneWaveOffset);
+
+            if (baseTarget != null)
             {
+                Vector2 fromBase = formationPosition - (Vector2)baseTarget.position;
+                if (fromBase.magnitude > maxChaseDistanceFromBase)
+                    formationPosition = (Vector2)baseTarget.position + fromBase.normalized * maxChaseDistanceFromBase;
+            }
+
+            Vector2 toFormationPos = formationPosition - (Vector2)transform.position;
+            if (toFormationPos.magnitude > 0.35f)
                 moveDirection = toFormationPos.normalized;
-            }
-            else
-            {
-                // In Position: stehen bleiben
-                moveDirection = Vector2.zero;
-            }
         }
         else if (baseTarget != null)
         {
-            moveDirection = (baseTarget.position - transform.position).normalized;
+            moveDirection = shouldReturnToBase
+                ? ((Vector2)baseTarget.position - (Vector2)transform.position).normalized
+                : GetGuardDirection();
         }
 
-        if (rb != null)
-        {
-            // Sanfte Bewegungs-Interpolation statt sofortige Änderung
-            rb.linearVelocity = Vector2.Lerp(rb.linearVelocity, moveDirection * moveSpeed, movementDamping);
-        }
+        moveDirection = ApplyAllySeparation(moveDirection, shouldReturnToBase);
+        ApplyVelocity(moveDirection);
     }
 
-    private bool IsTargetOnScreen(Transform target)
+    private void ApplyVelocity(Vector2 moveDirection)
     {
-        if (mainCamera == null)
-            return true;
+        if (rb == null)
+            return;
 
-        Vector3 viewportPos = mainCamera.WorldToViewportPoint(target.position);
-        return viewportPos.x > -viewportMargin && viewportPos.x < 1 + viewportMargin &&
-               viewportPos.y > -viewportMargin && viewportPos.y < 1 + viewportMargin &&
-               viewportPos.z > 0;
+        rb.linearVelocity = Vector2.Lerp(rb.linearVelocity, moveDirection * moveSpeed, movementDamping);
     }
 
     private void ClampToViewport()
@@ -211,8 +248,6 @@ public class AlliedDefender : MonoBehaviour
             return;
 
         Vector3 viewportPos = mainCamera.WorldToViewportPoint(transform.position);
-        
-        // Clampe Position im Bildschirm mit Margin
         viewportPos.x = Mathf.Clamp01(viewportPos.x);
         viewportPos.y = Mathf.Clamp01(viewportPos.y);
         viewportPos.z = mainCamera.nearClipPlane + 1f;
@@ -220,11 +255,8 @@ public class AlliedDefender : MonoBehaviour
         Vector3 clampedWorldPos = mainCamera.ViewportToWorldPoint(viewportPos);
         transform.position = new Vector3(clampedWorldPos.x, clampedWorldPos.y, transform.position.z);
 
-        // Stoppe Velocity wenn an Rand
-        if (rb != null && (viewportPos.x == 0 || viewportPos.x == 1 || viewportPos.y == 0 || viewportPos.y == 1))
-        {
+        if (rb != null && (viewportPos.x == 0f || viewportPos.x == 1f || viewportPos.y == 0f || viewportPos.y == 1f))
             rb.linearVelocity = Vector2.zero;
-        }
     }
 
     private void FaceDirection(Vector2 direction)
@@ -233,12 +265,13 @@ public class AlliedDefender : MonoBehaviour
             return;
 
         float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
-        transform.rotation = Quaternion.Euler(0, 0, angle - 90f);
+        transform.rotation = Quaternion.Euler(0f, 0f, angle - 90f);
     }
 
     private void ShootAt(Transform target)
     {
-        Vector2 direction = (target.position - transform.position).normalized;
+        Vector2 direction = ((Vector2)target.position - (Vector2)transform.position).normalized;
+        direction = ApplyAimVariance(direction);
         FaceDirection(direction);
 
         if (projectilePrefab == null)
@@ -247,48 +280,37 @@ public class AlliedDefender : MonoBehaviour
             return;
         }
 
-        GameObject projectile = Instantiate(
-            projectilePrefab,
-            transform.position,
-            Quaternion.Euler(defaultVisualRotation)
-        );
-
+        GameObject projectile = Instantiate(projectilePrefab, transform.position, Quaternion.Euler(defaultVisualRotation));
         Rigidbody2D projectileRb = projectile.GetComponent<Rigidbody2D>();
         if (projectileRb != null)
-        {
             projectileRb.linearVelocity = direction * projectileSpeed;
-        }
 
-        // Projectile mit Damage
         AlliedProjectile proj = projectile.GetComponent<AlliedProjectile>();
         if (proj != null)
-        {
             proj.damage = damagePerShot;
-        }
 
         if (AudioManager.Instance)
-        {
             AudioManager.Instance.PlaySFX("allied_shoot", 0.6f);
-        }
     }
 
     private void OnDrawGizmosSelected()
     {
         Gizmos.color = Color.green;
-        Gizmos.DrawWireSphere(transform.position, 8f);
+        Gizmos.DrawWireSphere(transform.position, maxChaseDistanceFromBase);
     }
 
-    public void InitializeFromRescue(Transform rescuedBase, Vector2 launchDirection)
+    public void InitializeFromRescue(Transform rescuedBase, Vector2 rescuedLaunchDirection)
     {
         baseTarget = rescuedBase;
         ApplyRescueTint();
         hasLeftBase = false;
+        returnAfterWaveEnd = false;
         isAbsorbingIntoBase = false;
         isArmingAtBase = true;
         isUndockingFromBase = false;
         armTimer = armingDuration;
         undockTimer = undockDuration;
-        this.launchDirection = launchDirection.sqrMagnitude > 0.001f ? launchDirection.normalized : Vector2.up;
+        launchDirection = rescuedLaunchDirection.sqrMagnitude > 0.001f ? rescuedLaunchDirection.normalized : Vector2.up;
         dockPosition = transform.position;
         transform.localScale = Vector3.one * 0.5f;
 
@@ -299,6 +321,24 @@ public class AlliedDefender : MonoBehaviour
         }
 
         SetSpriteSortingOrder(dockedSortingOrder);
+    }
+
+    private void EnsureFriendlyDamageable()
+    {
+        friendlyDamageable = GetComponent<GazeDamageable>();
+        if (friendlyDamageable == null)
+            friendlyDamageable = gameObject.AddComponent<GazeDamageable>();
+
+        friendlyDamageable.ConfigureRuntime(DamageableTeam.Friendly, maxHealth, false, true);
+    }
+
+    private void EnsureCombatCollider()
+    {
+        if (boxCollider == null)
+            return;
+
+        boxCollider.size = combatColliderSize;
+        boxCollider.offset = Vector2.zero;
     }
 
     private void ApplyRescueTint()
@@ -337,8 +377,7 @@ public class AlliedDefender : MonoBehaviour
         if (AudioManager.Instance)
             AudioManager.Instance.PlaySFX("ally_returned_home", returnPortalVolume, returnPortalPitch);
 
-        if (spriteRenderer != null)
-            spriteRenderer.sortingOrder = absorbSortingOrder;
+        SetSpriteSortingOrder(absorbSortingOrder);
     }
 
     private void UpdateBaseAbsorption()
@@ -357,7 +396,12 @@ public class AlliedDefender : MonoBehaviour
         transform.localScale = Vector3.Lerp(absorbStartScale, Vector3.zero, eased);
 
         if (t >= 1f)
+        {
+            if (Score.Instance != null)
+                Score.Instance.AddFriendlyRescuedScore();
+
             Destroy(gameObject);
+        }
     }
 
     private void UpdateArmingSequence()
@@ -401,5 +445,116 @@ public class AlliedDefender : MonoBehaviour
         if (spriteRenderer != null)
             spriteRenderer.sortingOrder = sortingOrder;
     }
+
+    private void OnCollisionEnter2D(Collision2D collision)
+    {
+        TryBeginAbsorptionFromBaseContact(collision);
+    }
+
+    private void OnCollisionStay2D(Collision2D collision)
+    {
+        TryBeginAbsorptionFromBaseContact(collision);
+    }
+
+    private Vector2 ApplyAimVariance(Vector2 direction)
+    {
+        float angleOffset = Random.Range(-aimVarianceDegrees, aimVarianceDegrees);
+        return Quaternion.Euler(0f, 0f, angleOffset) * direction;
+    }
+
+    private bool IsWaveCooldownActive()
+    {
+        if (waveManager == null)
+            waveManager = WaveManager.Instance;
+
+        if (waveManager == null)
+            return true;
+
+        return !waveManager.IsWaveActive() || waveManager.IsWavePaused();
+    }
+
+    private Vector2 GetGuardDirection()
+    {
+        if (baseTarget == null)
+            return Vector2.zero;
+
+        float angle = (Time.time * 0.9f) + formationOffset * Mathf.Deg2Rad;
+        Vector2 guardPoint = (Vector2)baseTarget.position +
+            new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * (idleGuardRadius + guardRadiusOffset);
+        Vector2 toGuardPoint = guardPoint - (Vector2)transform.position;
+
+        if (toGuardPoint.magnitude <= idleGuardTolerance)
+            return Vector2.zero;
+
+        return toGuardPoint.normalized;
+    }
+
+    private void HandleWaveComplete(int waveNumber)
+    {
+        returnAfterWaveEnd = true;
+    }
+
+    private void TryBeginAbsorptionFromBaseContact(Collision2D collision)
+    {
+        if (collision == null || !collision.gameObject.CompareTag("Base"))
+            return;
+
+        if (isArmingAtBase || isAbsorbingIntoBase || !hasLeftBase)
+            return;
+
+        if (!returnAfterWaveEnd && !IsWaveCooldownActive())
+            return;
+
+        BeginBaseAbsorption();
+    }
+
+    private void InitializeMovementIdentity()
+    {
+        int seed = Mathf.Abs(GetInstanceID());
+        formationOffset = Hash01(seed + 11) * 360f;
+        guardRadiusOffset = Mathf.Lerp(-0.4f, 0.55f, Hash01(seed + 23));
+        personalLaneOffset = Mathf.Lerp(-targetLaneOffset, targetLaneOffset, Hash01(seed + 47));
+        personalFormationRadius = formationRadius + Mathf.Lerp(-formationRadiusVariance, formationRadiusVariance, Hash01(seed + 71));
+        movementSeed = Hash01(seed + 101) * 10f;
+    }
+
+    private Vector2 ApplyAllySeparation(Vector2 moveDirection, bool shouldReturnToBase)
+    {
+        AlliedDefender[] defenders = FindObjectsOfType<AlliedDefender>();
+        Vector2 separation = Vector2.zero;
+        int nearbyCount = 0;
+
+        for (int i = 0; i < defenders.Length; i++)
+        {
+            AlliedDefender other = defenders[i];
+            if (other == null || other == this || other.isAbsorbingIntoBase)
+                continue;
+
+            Vector2 offset = (Vector2)transform.position - (Vector2)other.transform.position;
+            float distance = offset.magnitude;
+            if (distance <= 0.001f || distance > allySeparationRadius)
+                continue;
+
+            float weight = 1f - (distance / allySeparationRadius);
+            separation += offset.normalized * weight;
+            nearbyCount++;
+        }
+
+        if (nearbyCount == 0)
+            return moveDirection;
+
+        separation /= nearbyCount;
+        float separationWeight = shouldReturnToBase ? allySeparationStrength * 0.55f : allySeparationStrength;
+        Vector2 blended = moveDirection + separation * separationWeight;
+        return blended.sqrMagnitude > 0.001f ? blended.normalized : moveDirection;
+    }
+
+    private static float Hash01(int seed)
+    {
+        uint x = (uint)seed;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        return (x & 0x00FFFFFF) / 16777215f;
+    }
 }
- 

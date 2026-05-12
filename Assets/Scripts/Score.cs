@@ -1,15 +1,25 @@
+using System.Collections;
 using UnityEngine;
 using TMPro;
 using UnityEngine.UI;
 
 public class Score : MonoBehaviour
 {
+    public const int EnemyKillPoints = 5;
+    public const int FriendlyReachedBasePoints = 5;
+    public const int FriendlyRescuedPoints = 10;
+    public const int FriendlyKilledPenalty = -10;
+    public const int WaveSurvivedPoints = 20;
+
     private int score;
     public TextMeshProUGUI scoreText;
     public TextMeshProUGUI waveText;
     public static Score Instance { get; private set; }
     
     private WaveManager waveManager;
+    private TextMeshProUGUI waveBannerText;
+    private CanvasGroup waveBannerGroup;
+    private Coroutine waveAnnouncementRoutine;
 
     private void Awake()
     {
@@ -24,7 +34,8 @@ public class Score : MonoBehaviour
         waveManager = WaveManager.Instance;
         if (waveManager != null)
         {
-            waveManager.OnWaveStart.AddListener(UpdateWaveDisplay);
+            waveManager.OnWaveStart.AddListener(HandleWaveStart);
+            waveManager.OnWaveComplete.AddListener(HandleWaveComplete);
         }
         ApplyHudTheme();
         RefreshScoreDisplay();
@@ -42,12 +53,29 @@ public class Score : MonoBehaviour
         Debug.Log($"Score increased: {amount}, Total: {score}");
     }
 
+    public void AddEnemyKillScore() => IncreaseScore(EnemyKillPoints);
+    public void AddFriendlyReachedBaseScore() => IncreaseScore(FriendlyReachedBasePoints);
+    public void AddFriendlyRescuedScore() => IncreaseScore(FriendlyRescuedPoints);
+    public void AddFriendlyKilledPenalty() => IncreaseScore(FriendlyKilledPenalty);
+    public void AddWaveSurvivedScore() => IncreaseScore(WaveSurvivedPoints);
+
     private void UpdateWaveDisplay(int waveNumber)
     {
         if (waveText != null)
         {
             waveText.text = $"WAVE // {waveNumber}";
         }
+    }
+
+    private void HandleWaveStart(int waveNumber)
+    {
+        UpdateWaveDisplay(waveNumber);
+        PlayWaveAnnouncement(waveNumber);
+    }
+
+    private void HandleWaveComplete(int waveNumber)
+    {
+        AddWaveSurvivedScore();
     }
     
     public int GetScore()
@@ -139,6 +167,8 @@ public class Score : MonoBehaviour
                 accentRect.SetSiblingIndex(plateRect.GetSiblingIndex() + 1);
             }
         }
+
+        EnsureWaveBanner();
     }
 
     private Image EnsureImage(RectTransform parent, string name)
@@ -152,5 +182,92 @@ public class Score : MonoBehaviour
         }
 
         return existing.GetComponent<Image>();
+    }
+
+    private void EnsureWaveBanner()
+    {
+        if (waveText == null || waveBannerText != null)
+            return;
+
+        RectTransform parentRect = waveText.transform.parent as RectTransform;
+        if (parentRect == null)
+            return;
+
+        GameObject bannerObject = new GameObject("WaveBanner", typeof(RectTransform), typeof(CanvasRenderer), typeof(CanvasGroup), typeof(TextMeshProUGUI));
+        bannerObject.transform.SetParent(parentRect, false);
+
+        RectTransform bannerRect = bannerObject.GetComponent<RectTransform>();
+        bannerRect.anchorMin = new Vector2(0.5f, 1f);
+        bannerRect.anchorMax = new Vector2(0.5f, 1f);
+        bannerRect.pivot = new Vector2(0.5f, 1f);
+        bannerRect.anchoredPosition = new Vector2(0f, -32f);
+        bannerRect.sizeDelta = new Vector2(460f, 84f);
+
+        waveBannerGroup = bannerObject.GetComponent<CanvasGroup>();
+        waveBannerGroup.alpha = 0f;
+
+        waveBannerText = bannerObject.GetComponent<TextMeshProUGUI>();
+        waveBannerText.text = string.Empty;
+        waveBannerText.font = waveText.font;
+        waveBannerText.fontSize = 34;
+        waveBannerText.fontStyle = FontStyles.Bold;
+        waveBannerText.alignment = TextAlignmentOptions.Center;
+        waveBannerText.color = new Color32(226, 245, 255, 255);
+        waveBannerText.characterSpacing = 3f;
+    }
+
+    private void PlayWaveAnnouncement(int waveNumber)
+    {
+        if (waveText == null)
+            return;
+
+        EnsureWaveBanner();
+
+        if (waveAnnouncementRoutine != null)
+            StopCoroutine(waveAnnouncementRoutine);
+
+        waveAnnouncementRoutine = StartCoroutine(AnimateWaveAnnouncement(waveNumber));
+    }
+
+    private IEnumerator AnimateWaveAnnouncement(int waveNumber)
+    {
+        Vector3 originalScale = waveText.rectTransform.localScale;
+        Color originalColor = waveText.color;
+        Color flashColor = new Color32(255, 126, 84, 255);
+
+        if (waveBannerText != null && waveBannerGroup != null)
+        {
+            waveBannerText.text = $"WAVE {waveNumber} INBOUND";
+            waveBannerGroup.alpha = 0f;
+            waveBannerText.rectTransform.localScale = Vector3.one * 0.88f;
+        }
+
+        float duration = 1.15f;
+        float timer = 0f;
+        while (timer < duration)
+        {
+            timer += Time.deltaTime;
+            float t = Mathf.Clamp01(timer / duration);
+            float pulse = Mathf.Sin(t * Mathf.PI);
+
+            waveText.color = Color.Lerp(originalColor, flashColor, pulse);
+            waveText.rectTransform.localScale = Vector3.Lerp(originalScale, originalScale * 1.35f, pulse);
+
+            if (waveBannerText != null && waveBannerGroup != null)
+            {
+                waveBannerGroup.alpha = Mathf.Clamp01(pulse * 1.3f);
+                waveBannerText.rectTransform.localScale = Vector3.Lerp(Vector3.one * 0.88f, Vector3.one, pulse);
+            }
+
+            yield return null;
+        }
+
+        waveText.color = originalColor;
+        waveText.rectTransform.localScale = originalScale;
+
+        if (waveBannerGroup != null)
+            waveBannerGroup.alpha = 0f;
+
+        waveAnnouncementRoutine = null;
     }
 }

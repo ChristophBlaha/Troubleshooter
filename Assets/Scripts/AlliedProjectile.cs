@@ -55,6 +55,9 @@ public class AlliedProjectile : MonoBehaviour
         if (enemy == null)
             return;
 
+        if (enemy.Team != DamageableTeam.Hostile)
+            return;
+
         if (!enemy.IsPreciseProjectileHit(transform.position, preciseHitPadding))
             return;
 

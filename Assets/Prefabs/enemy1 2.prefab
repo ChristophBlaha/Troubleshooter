@@ -136,7 +136,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyMovement
   baseTarget: {fileID: 0}
-  speed: 1
+  speed: 0.55
 --- !u!114 &3918907512435744291
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -149,7 +149,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2b4cb9e2625c0a3489c6363d9cf1a5dc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyAttack
-  damage: 2
+  damage: 4
   hitCooldown: 0.2
   bounceForce: 0.0001
 --- !u!50 &1374531002615829608
