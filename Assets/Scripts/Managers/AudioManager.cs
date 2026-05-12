@@ -108,9 +108,10 @@ public class AudioManager : MonoBehaviour
         }
     }
 
-    public void PlaySFX(string sfxId, float volumeMultiplier = 1f)
+    public void PlaySFX(string sfxId, float volumeMultiplier = 1f, float pitch = 1f)
     {
-        if (!sfxDictionary.ContainsKey(sfxId))
+        string resolvedId = ResolveSfxId(sfxId);
+        if (!sfxDictionary.ContainsKey(resolvedId))
         {
             Debug.LogWarning($"[AudioManager] SFX nicht gefunden: {sfxId}");
             return;
@@ -119,8 +120,9 @@ public class AudioManager : MonoBehaviour
         AudioSource availableSource = GetAvailableSFXSource();
         if (availableSource != null)
         {
-            availableSource.clip = sfxDictionary[sfxId];
+            availableSource.clip = sfxDictionary[resolvedId];
             availableSource.volume = sfxVolume * masterVolume * volumeMultiplier;
+            availableSource.pitch = pitch;
             availableSource.PlayOneShot(availableSource.clip);
         }
     }
@@ -212,5 +214,16 @@ public class AudioManager : MonoBehaviour
         }
         // Wenn alle belegt, nutze den ältesten
         return sfxSources[0];
+    }
+
+    private string ResolveSfxId(string sfxId)
+    {
+        if (sfxDictionary.ContainsKey(sfxId))
+            return sfxId;
+
+        if (sfxId == "ally_returned_home" && sfxDictionary.ContainsKey("ally_arrived"))
+            return "ally_arrived";
+
+        return sfxId;
     }
 }

@@ -16,6 +16,16 @@ public class AlliedDefender : MonoBehaviour
     [SerializeField] private float preferredDistance = 5f;  // Abstand zum Gegner halten
     [SerializeField] private float viewportMargin = 1f;      // Abstand vom Bildschirmrand
     [SerializeField] private float movementDamping = 0.1f;   // Sanfte Bewegungs-Übergänge
+    [SerializeField] private Color rescuedTint = new Color(0.2f, 1f, 0.38f, 1f);
+    [SerializeField] private float returnPortalVolume = 0.8f;
+    [SerializeField] private float returnPortalPitch = 1.22f;
+    [SerializeField] private float launchImpulse = 1.25f;
+    [SerializeField] private float absorbStartDistance = 0.7f;
+    [SerializeField] private float absorbDuration = 0.35f;
+    [SerializeField] private float armingDuration = 0.35f;
+    [SerializeField] private float undockDuration = 0.45f;
+    [SerializeField] private int dockedSortingOrder = 18;
+    [SerializeField] private int absorbSortingOrder = 20;
 
     private Transform baseTarget;
     private float shootTimer = 0f;
@@ -24,14 +34,36 @@ public class AlliedDefender : MonoBehaviour
     private Vector2 targetVelocity = Vector2.zero;  // Für sanfte Bewegungs-Übergänge
     private float formationOffset = 0f;  // Position im Kreis um Gegner
     private bool hasLeftBase = false;  // Flag: ist der Defender bereits aus der Base heraus?
+    private SpriteRenderer spriteRenderer;
+    private bool isAbsorbingIntoBase;
+    private float absorbTimer;
+    private Vector3 absorbStartPosition;
+    private Vector3 absorbStartScale;
+    private Collider2D[] cachedColliders;
+    private bool isArmingAtBase;
+    private float armTimer;
+    private float undockTimer;
+    private Vector3 dockPosition;
+    private Vector2 launchDirection;
+    private int originalSortingOrder;
+    private bool isUndockingFromBase;
+
+    private void Awake()
+    {
+        rb = GetComponent<Rigidbody2D>();
+        spriteRenderer = GetComponentInChildren<SpriteRenderer>();
+        cachedColliders = GetComponentsInChildren<Collider2D>(true);
+        if (spriteRenderer != null)
+            originalSortingOrder = spriteRenderer.sortingOrder;
+    }
 
     private void Start()
     {
         baseTarget = GameObject.FindGameObjectWithTag("Base")?.transform;
         transform.rotation = Quaternion.Euler(defaultVisualRotation);
-        rb = GetComponent<Rigidbody2D>();
         mainCamera = Camera.main;
-        
+        ApplyRescueTint();
+
         // Alle Defenders bekommen unterschiedliche Formation-Position
         AlliedDefender[] allDefenders = FindObjectsOfType<AlliedDefender>();
         for (int i = 0; i < allDefenders.Length; i++)
@@ -51,6 +83,18 @@ public class AlliedDefender : MonoBehaviour
             baseTarget = GameObject.FindGameObjectWithTag("Base")?.transform;
         }
 
+        if (isAbsorbingIntoBase)
+        {
+            UpdateBaseAbsorption();
+            return;
+        }
+
+        if (isArmingAtBase)
+        {
+            UpdateArmingSequence();
+            return;
+        }
+
         // Im Bildschirm bleiben
         ClampToViewport();
 
@@ -61,9 +105,9 @@ public class AlliedDefender : MonoBehaviour
         }
 
         // Nur zerstöre wenn er bereits herauskam und zurückkommt
-        if (hasLeftBase && baseTarget != null && Vector2.Distance(transform.position, baseTarget.position) < 0.5f)
+        if (hasLeftBase && baseTarget != null && Vector2.Distance(transform.position, baseTarget.position) < absorbStartDistance)
         {
-            Destroy(gameObject);
+            BeginBaseAbsorption();
             return;
         }
 
@@ -232,6 +276,130 @@ public class AlliedDefender : MonoBehaviour
     {
         Gizmos.color = Color.green;
         Gizmos.DrawWireSphere(transform.position, 8f);
+    }
+
+    public void InitializeFromRescue(Transform rescuedBase, Vector2 launchDirection)
+    {
+        baseTarget = rescuedBase;
+        ApplyRescueTint();
+        hasLeftBase = false;
+        isAbsorbingIntoBase = false;
+        isArmingAtBase = true;
+        isUndockingFromBase = false;
+        armTimer = armingDuration;
+        undockTimer = undockDuration;
+        this.launchDirection = launchDirection.sqrMagnitude > 0.001f ? launchDirection.normalized : Vector2.up;
+        dockPosition = transform.position;
+        transform.localScale = Vector3.one * 0.5f;
+
+        if (rb != null)
+        {
+            rb.linearVelocity = Vector2.zero;
+            rb.simulated = true;
+        }
+
+        SetSpriteSortingOrder(dockedSortingOrder);
+    }
+
+    private void ApplyRescueTint()
+    {
+        if (spriteRenderer != null)
+            spriteRenderer.color = rescuedTint;
+    }
+
+    private void BeginBaseAbsorption()
+    {
+        if (isAbsorbingIntoBase)
+            return;
+
+        isAbsorbingIntoBase = true;
+        isArmingAtBase = false;
+        isUndockingFromBase = false;
+        absorbTimer = 0f;
+        absorbStartPosition = transform.position;
+        absorbStartScale = transform.localScale;
+
+        if (rb != null)
+        {
+            rb.linearVelocity = Vector2.zero;
+            rb.simulated = false;
+        }
+
+        if (cachedColliders != null)
+        {
+            for (int i = 0; i < cachedColliders.Length; i++)
+            {
+                if (cachedColliders[i] != null)
+                    cachedColliders[i].enabled = false;
+            }
+        }
+
+        if (AudioManager.Instance)
+            AudioManager.Instance.PlaySFX("ally_returned_home", returnPortalVolume, returnPortalPitch);
+
+        if (spriteRenderer != null)
+            spriteRenderer.sortingOrder = absorbSortingOrder;
+    }
+
+    private void UpdateBaseAbsorption()
+    {
+        if (baseTarget == null)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        absorbTimer += Time.deltaTime;
+        float t = Mathf.Clamp01(absorbTimer / absorbDuration);
+        float eased = 1f - Mathf.Pow(1f - t, 3f);
+
+        transform.position = Vector3.Lerp(absorbStartPosition, baseTarget.position, eased);
+        transform.localScale = Vector3.Lerp(absorbStartScale, Vector3.zero, eased);
+
+        if (t >= 1f)
+            Destroy(gameObject);
+    }
+
+    private void UpdateArmingSequence()
+    {
+        if (rb != null)
+            rb.linearVelocity = Vector2.zero;
+
+        transform.localScale = Vector3.one * 0.5f;
+
+        if (armTimer > 0f)
+        {
+            armTimer -= Time.deltaTime;
+            transform.position = dockPosition;
+            return;
+        }
+
+        if (!isUndockingFromBase)
+        {
+            isUndockingFromBase = true;
+            SetSpriteSortingOrder(dockedSortingOrder);
+        }
+
+        if (undockTimer > 0f)
+        {
+            undockTimer -= Time.deltaTime;
+            transform.position += (Vector3)(launchDirection * launchImpulse * Time.deltaTime);
+            return;
+        }
+
+        isArmingAtBase = false;
+        isUndockingFromBase = false;
+        hasLeftBase = true;
+        SetSpriteSortingOrder(originalSortingOrder);
+
+        if (rb != null)
+            rb.linearVelocity = launchDirection * launchImpulse;
+    }
+
+    private void SetSpriteSortingOrder(int sortingOrder)
+    {
+        if (spriteRenderer != null)
+            spriteRenderer.sortingOrder = sortingOrder;
     }
 }
  

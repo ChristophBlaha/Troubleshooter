@@ -9,6 +9,8 @@ public class GazeDamageable : GazeInteractable
     [SerializeField] private int damagePerTick = 1;
     [SerializeField] private float damageInterval = 0.2f;
     [SerializeField] private Slider healthBar;
+    [SerializeField, Range(0.1f, 1f)] private float externalHitboxScale = 0.55f;
+    [SerializeField] private float externalHitboxPadding = 0.04f;
 
     public int currentHealth { get; set; }
     public int MaxHealth 
@@ -90,6 +92,23 @@ public class GazeDamageable : GazeInteractable
         TakeDamage(damage);
     }
 
+    public bool IsPreciseProjectileHit(Vector2 worldPoint, float additionalPadding = 0f)
+    {
+        if (TryGetCombatBounds(out Bounds combatBounds))
+        {
+            Vector3 center = combatBounds.center;
+            Vector3 extents = combatBounds.extents;
+            extents.x = Mathf.Max(0.01f, extents.x * externalHitboxScale + externalHitboxPadding + additionalPadding);
+            extents.y = Mathf.Max(0.01f, extents.y * externalHitboxScale + externalHitboxPadding + additionalPadding);
+
+            return Mathf.Abs(worldPoint.x - center.x) <= extents.x &&
+                   Mathf.Abs(worldPoint.y - center.y) <= extents.y;
+        }
+
+        float fallbackRadius = 0.2f + additionalPadding;
+        return Vector2.Distance(worldPoint, transform.position) <= fallbackRadius;
+    }
+
     private void UpdateHealthBar()
     {
         if (healthBar != null)
@@ -111,5 +130,25 @@ public class GazeDamageable : GazeInteractable
         }
 
         Destroy(gameObject);
+    }
+
+    private bool TryGetCombatBounds(out Bounds bounds)
+    {
+        SpriteRenderer spriteRenderer = GetComponentInChildren<SpriteRenderer>();
+        if (spriteRenderer != null)
+        {
+            bounds = spriteRenderer.bounds;
+            return true;
+        }
+
+        BoxCollider2D collider = GetComponent<BoxCollider2D>();
+        if (collider != null)
+        {
+            bounds = collider.bounds;
+            return true;
+        }
+
+        bounds = default;
+        return false;
     }
 }
