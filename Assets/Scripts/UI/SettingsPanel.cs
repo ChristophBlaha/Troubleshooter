@@ -16,7 +16,6 @@ public class SettingsPanel : MonoBehaviour
     [SerializeField] private TextMeshProUGUI sfxVolumeText;
     [SerializeField] private Button resetButton;
     [SerializeField] private Toggle mouseAsGazeToggle;
-    [SerializeField] private TextMeshProUGUI mouseAsGazeLabel;
 
     private AudioManager audioManager;
 
@@ -173,8 +172,5 @@ public class SettingsPanel : MonoBehaviour
             PlayerPrefs.SetInt("UseMouseAsGaze", enabled ? 1 : 0);
             PlayerPrefs.Save();
         }
-
-        if (mouseAsGazeLabel != null)
-            mouseAsGazeLabel.text = enabled ? "Mouse as Gaze: ON" : "Mouse as Gaze: OFF";
     }
 }

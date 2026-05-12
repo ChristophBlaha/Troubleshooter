@@ -16,17 +16,17 @@ public class HighscoresPanelUI : MonoBehaviour
 
         Debug.Log($"[HighscoresPanelUI] ShowScores called with {scores?.Count ?? 0} entries");
 
-        string text = "=== HIGH SCORES ===\n\n";
+        string text = "COMMAND SCOREBOARD\n\n";
         if (scores != null && scores.Count > 0)
         {
             for (int i = 0; i < scores.Count; i++)
             {
-                text += $"{i+1}. {scores[i].playerName} - {scores[i].score} (Wave {scores[i].wave})\n";
+                text += $"{i + 1}. {scores[i].playerName}  //  {scores[i].score}  //  WAVE {scores[i].wave}\n";
             }
         }
         else
         {
-            text += "No scores yet!";
+            text += "NO COMBAT RECORDS YET";
         }
 
         scoresText.text = text;

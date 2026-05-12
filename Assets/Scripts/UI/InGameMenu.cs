@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.Events;
 using TMPro;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
@@ -27,7 +28,7 @@ public class InGameMenu : MonoBehaviour
         if (highscoresPanel != null) highscoresPanel.SetActive(false);
 
         if (quitButton != null)
-            quitButton.onClick.AddListener(QuitGame);
+            AssignButtonAction(quitButton, QuitGame);
 
         // backButton wiring removed
 
@@ -49,8 +50,7 @@ public class InGameMenu : MonoBehaviour
 
         if (resumeButton != null)
         {
-            resumeButton.onClick.AddListener(Resume);
-            resumeButton.interactable = true;
+            AssignButtonAction(resumeButton, Resume);
             Debug.Log("[InGameMenu] Resume button wired.");
         }
 
@@ -103,15 +103,22 @@ public class InGameMenu : MonoBehaviour
             foreach (var b in allButtons)
             {
                 if (b == null) continue;
+
+                if (b == resumeButton || b == quitButton)
+                    continue;
+
+                if (b.transform.parent != menuPanel.transform)
+                    continue;
+
                 var n = b.name.ToLower();
                 if ((n.Contains("setting") || n.Contains("settings") || n.Contains("options")) && settingsPanel != null)
                 {
-                    b.onClick.AddListener(OpenSettings);
+                    AssignButtonAction(b, OpenSettings);
                     Debug.Log($"[InGameMenu] Wired button '{b.name}' -> OpenSettings");
                 }
                 if ((n.Contains("high") || n.Contains("score")) && highscoresPanel != null)
                 {
-                    b.onClick.AddListener(OpenHighScores);
+                    AssignButtonAction(b, OpenHighScores);
                     Debug.Log($"[InGameMenu] Wired button '{b.name}' -> OpenHighScores");
                 }
             }
@@ -128,8 +135,7 @@ public class InGameMenu : MonoBehaviour
                     var bn = bb.name.ToLower();
                     if (bn.Contains("back") || bn.Contains("zurück") || bn.Contains("close") || bn.Contains("cancel") || bn.Contains("return") || bn.Contains("menu"))
                     {
-                        bb.onClick.AddListener(BackToMenu);
-                        bb.interactable = true;
+                        AssignButtonAction(bb, BackToMenu);
                         Debug.Log($"[InGameMenu] Wired back button '{bb.name}' in {panelName} -> BackToMenu");
                         wiredAny = true;
                     }
@@ -142,6 +148,8 @@ public class InGameMenu : MonoBehaviour
             if (highscoresPanel != null)
                 wireBacks(highscoresPanel, "HighscoresPanel");
         }
+
+        ApplyShooterTheme();
     }
 
     private void Update()
@@ -166,6 +174,7 @@ public class InGameMenu : MonoBehaviour
 
         if (isOpen)
         {
+            SetRootMenuButtonsVisible(true);
             Time.timeScale = 0f;
             Debug.Log("[InGameMenu] Menu opened - game paused");
         }
@@ -199,6 +208,7 @@ public class InGameMenu : MonoBehaviour
 
     public void OpenSettings()
     {
+        SetRootMenuButtonsVisible(false);
         if (settingsPanel != null)
             settingsPanel.SetActive(true);
         if (highscoresPanel != null)
@@ -207,6 +217,7 @@ public class InGameMenu : MonoBehaviour
 
     public void OpenHighScores()
     {
+        SetRootMenuButtonsVisible(false);
         if (highscoresPanel != null)
         {
             highscoresPanel.SetActive(true);
@@ -223,15 +234,16 @@ public class InGameMenu : MonoBehaviour
                 if (scoresText != null && HighScoreManager.Instance != null)
                 {
                     var scores = HighScoreManager.Instance.GetHighScores();
-                    string text = "=== HIGH SCORES ===\n\n";
+                    string text = "COMMAND SCOREBOARD\n\n";
                     for (int i = 0; i < scores.Count; i++)
                     {
-                        text += $"{i+1}. {scores[i].playerName} - {scores[i].score} (Wave {scores[i].wave})\n";
+                        text += $"{i + 1}. {scores[i].playerName}  //  {scores[i].score}  //  WAVE {scores[i].wave}\n";
                     }
                     if (scores.Count == 0)
-                        text += "No scores yet!";
+                        text += "NO COMBAT RECORDS YET";
 
                     scoresText.text = text;
+                    scoresText.alignment = TextAlignmentOptions.TopLeft;
                 }
             }
         }
@@ -243,6 +255,7 @@ public class InGameMenu : MonoBehaviour
     {
         if (settingsPanel != null) settingsPanel.SetActive(false);
         if (highscoresPanel != null) highscoresPanel.SetActive(false);
+        SetRootMenuButtonsVisible(true);
         if (menuPanel != null) menuPanel.SetActive(false);
         isOpen = false;
     }
@@ -252,6 +265,7 @@ public class InGameMenu : MonoBehaviour
     {
         if (settingsPanel != null) settingsPanel.SetActive(false);
         if (highscoresPanel != null) highscoresPanel.SetActive(false);
+        SetRootMenuButtonsVisible(true);
         if (menuPanel != null) menuPanel.SetActive(true);
         isOpen = true;
         Time.timeScale = 0f;
@@ -267,5 +281,81 @@ public class InGameMenu : MonoBehaviour
         #else
             Application.Quit();
         #endif
+    }
+
+    private void ApplyShooterTheme()
+    {
+        if (resumeButton != null)
+            MainMenuUI.ApplyPrimaryButtonTheme(resumeButton, "RESUME", true);
+
+        if (quitButton != null)
+            MainMenuUI.ApplyPrimaryButtonTheme(quitButton, "ABORT", false, true);
+
+        if (menuPanel != null)
+        {
+            MainMenuUI.ApplyPanelTheme(menuPanel);
+
+            Button[] buttons = menuPanel.GetComponentsInChildren<Button>(true);
+            for (int i = 0; i < buttons.Length; i++)
+            {
+                if (buttons[i] == resumeButton || buttons[i] == quitButton)
+                    continue;
+
+                string lowerName = buttons[i].name.ToLower();
+                if (lowerName.Contains("setting"))
+                    MainMenuUI.ApplyPrimaryButtonTheme(buttons[i], "SYSTEMS", false);
+                else if (lowerName.Contains("high") || lowerName.Contains("score"))
+                    MainMenuUI.ApplyPrimaryButtonTheme(buttons[i], "WAR LOG", false);
+            }
+        }
+
+        if (settingsPanel != null)
+        {
+            MainMenuUI.ApplyPanelTheme(settingsPanel);
+            MainMenuUI.StyleSubpanelButtons(settingsPanel, "BACK");
+
+            Slider[] sliders = settingsPanel.GetComponentsInChildren<Slider>(true);
+            for (int i = 0; i < sliders.Length; i++)
+                MainMenuUI.ApplySliderTheme(sliders[i]);
+
+            Toggle[] toggles = settingsPanel.GetComponentsInChildren<Toggle>(true);
+            for (int i = 0; i < toggles.Length; i++)
+                MainMenuUI.ApplyToggleTheme(toggles[i]);
+        }
+
+        if (highscoresPanel != null)
+        {
+            MainMenuUI.MatchPanelLayout(highscoresPanel, settingsPanel);
+            MainMenuUI.ApplyPanelTheme(highscoresPanel);
+            MainMenuUI.StyleSubpanelButtons(highscoresPanel, "RETURN");
+            MainMenuUI.ApplyScoreboardLayout(highscoresPanel);
+        }
+    }
+
+    private void SetRootMenuButtonsVisible(bool visible)
+    {
+        if (menuPanel == null)
+            return;
+
+        Button[] buttons = menuPanel.GetComponentsInChildren<Button>(true);
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            if (buttons[i] == null)
+                continue;
+
+            Transform parent = buttons[i].transform.parent;
+            if (parent == menuPanel.transform)
+                buttons[i].gameObject.SetActive(visible);
+        }
+    }
+
+    private static void AssignButtonAction(Button button, UnityAction action)
+    {
+        if (button == null || action == null)
+            return;
+
+        button.onClick = new Button.ButtonClickedEvent();
+        button.onClick.AddListener(action);
+        button.interactable = true;
     }
 }

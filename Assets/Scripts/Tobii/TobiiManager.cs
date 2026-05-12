@@ -17,8 +17,10 @@ using TobiiHeadPose = Tobii.GameIntegration.Net.HeadPose;
 
 public class TobiiManager : MonoBehaviour
 {
+#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
     [DllImport("user32.dll")]
     private static extern IntPtr GetActiveWindow();
+#endif
 
     // ========================================================================
     // ÖFFENTLICHE DATEN
@@ -114,7 +116,9 @@ public class TobiiManager : MonoBehaviour
         }
         catch (Exception e)
         {
-            Debug.LogError("[Tobii] Fehler: " + e.Message);
+            isDllLoaded = false;
+            IsApiReady = false;
+            Debug.LogWarning("[Tobii] Tobii-Initialisierung fehlgeschlagen, Mouse-as-Gaze bleibt als Fallback verfuegbar: " + e.Message);
         }
         // Load preference for mouse fallback
         enableMouseAsGaze = PlayerPrefs.GetInt(PREF_MOUSE_AS_GAZE, enableMouseAsGaze ? 1 : 0) == 1;
@@ -152,54 +156,72 @@ public class TobiiManager : MonoBehaviour
 
     private void Update()
     {
-        if (!isDllLoaded) return;
+        bool hadValidTobiiData = HasValidGazeData;
 
-        TobiiGameIntegrationApi.Update();
-
-        IsApiReady = TobiiGameIntegrationApi.IsApiInitialized();
-        if (!IsApiReady) return;
-
-        IsTrackerConnected = TobiiGameIntegrationApi.IsTrackerConnected();
-        IsUserPresent = TobiiGameIntegrationApi.IsPresent();
-
-        if (!IsTrackerConnected)
+        if (isDllLoaded)
         {
-            retryTimer += Time.deltaTime;
-            if (retryTimer >= 2f)
+            TobiiGameIntegrationApi.Update();
+
+            IsApiReady = TobiiGameIntegrationApi.IsApiInitialized();
+
+            if (IsApiReady)
             {
-                retryTimer = 0f;
-                RebindTrackingWindow("Retry");
+                IsTrackerConnected = TobiiGameIntegrationApi.IsTrackerConnected();
+                IsUserPresent = TobiiGameIntegrationApi.IsPresent();
+
+                if (!IsTrackerConnected)
+                {
+                    retryTimer += Time.deltaTime;
+                    if (retryTimer >= 2f)
+                    {
+                        retryTimer = 0f;
+                        RebindTrackingWindow("Retry");
+                    }
+                }
+
+                // Gaze Daten
+                TobiiGazePoint gazePoint;
+                bool freshData = TobiiGameIntegrationApi.TryGetLatestGazePoint(out gazePoint);
+
+                if (freshData)
+                {
+                    timeSinceLastGaze = 0f;
+
+                    GazePointNormalized = new Vector2(gazePoint.X, gazePoint.Y);
+
+                    Vector2 rawViewport = new Vector2(
+                        (gazePoint.X + 1f) * 0.5f,
+                        (gazePoint.Y + 1f) * 0.5f
+                    );
+
+                    if (gazeSmoothing > 0f && hadValidTobiiData)
+                        smoothedGazeViewport = Vector2.Lerp(rawViewport, smoothedGazeViewport, gazeSmoothing);
+                    else
+                        smoothedGazeViewport = rawViewport;
+
+                    GazePointViewport = smoothedGazeViewport;
+                }
+                else
+                {
+                    timeSinceLastGaze += Time.deltaTime;
+                }
+
+                HasValidGazeData = (timeSinceLastGaze <= gazeGracePeriod);
             }
-        }
-
-        // Gaze Daten
-        TobiiGazePoint gazePoint;
-        bool freshData = TobiiGameIntegrationApi.TryGetLatestGazePoint(out gazePoint);
-
-        if (freshData)
-        {
-            timeSinceLastGaze = 0f;
-
-            GazePointNormalized = new Vector2(gazePoint.X, gazePoint.Y);
-
-            Vector2 rawViewport = new Vector2(
-                (gazePoint.X + 1f) * 0.5f,
-                (gazePoint.Y + 1f) * 0.5f
-            );
-
-            if (gazeSmoothing > 0f && HasValidGazeData)
-                smoothedGazeViewport = Vector2.Lerp(rawViewport, smoothedGazeViewport, gazeSmoothing);
             else
-                smoothedGazeViewport = rawViewport;
-
-            GazePointViewport = smoothedGazeViewport;
+            {
+                IsTrackerConnected = false;
+                IsUserPresent = false;
+                HasValidGazeData = false;
+            }
         }
         else
         {
-            timeSinceLastGaze += Time.deltaTime;
+            IsApiReady = false;
+            IsTrackerConnected = false;
+            IsUserPresent = false;
+            HasValidGazeData = false;
         }
-
-        HasValidGazeData = (timeSinceLastGaze <= gazeGracePeriod);
 
         // Wenn Mouse-as-Gaze aktiv ist, hat die Maus Vorrang vor Tobii-Daten.
         // Das ist kein reiner Fallback, sondern ein echter Eingabemodus.
@@ -254,7 +276,7 @@ public class TobiiManager : MonoBehaviour
 
         // Head Tracking (unverändert)
         TobiiHeadPose headPose;
-        if (TobiiGameIntegrationApi.TryGetLatestHeadPose(out headPose))
+        if (IsApiReady && TobiiGameIntegrationApi.TryGetLatestHeadPose(out headPose))
         {
             HeadPosition = new Vector3(
                 headPose.Position.X, headPose.Position.Y, headPose.Position.Z);
@@ -318,6 +340,7 @@ public class TobiiManager : MonoBehaviour
 
         try
         {
+#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
             IntPtr hwnd = GetActiveWindow();
             if (hwnd != IntPtr.Zero)
             {
@@ -325,6 +348,9 @@ public class TobiiManager : MonoBehaviour
                 retryTimer = 0f;
                 Debug.Log($"[Tobii] TrackWindow ({reason})");
             }
+#else
+            Debug.Log($"[Tobii] TrackWindow uebersprungen ({reason}) - nur unter Windows verfuegbar");
+#endif
         }
         catch (Exception e)
         {
